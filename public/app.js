@@ -24,13 +24,32 @@ const els = {
   headAvatar: $("headAvatar"),
   headStatus: $("headStatus"),
   headActivity: $("headActivity"),
+  bondPct: $("bondPct"),
+  bondFill: $("bondFill"),
+  bondLabel: $("bondLabel"),
+  traits: $("traits"),
+  memList: $("memList"),
+  memCount: $("memCount"),
+  forgetBtn: $("forgetBtn"),
+  langBadge: $("langBadge"),
+  installBtn: $("installBtn"),
+  menuBtn: $("menuBtn"),
+  backdrop: $("backdrop"),
+  relationship: $("relationship"),
+  pronoun: $("pronoun"),
 };
 
 const state = {
   messages: load("oshadi_history", []),
-  userName: load("oshadi_name", ""),
+  userName: "",
   mood: "happy",
   moods: {},
+  traitDefs: {},
+  traits: {},
+  facts: [],
+  affection: 20,
+  relationship: "partner",
+  pronoun: "he",
   busy: false,
 };
 
@@ -38,19 +57,23 @@ const state = {
 init();
 
 async function init() {
-  els.userName.value = state.userName;
   els.userName.addEventListener("input", () => {
     state.userName = els.userName.value.trim();
-    save("oshadi_name", state.userName);
+    saveTraits();
   });
 
   els.composer.addEventListener("submit", onSend);
   els.clearBtn.addEventListener("click", clearChat);
+  els.forgetBtn.addEventListener("click", forgetMe);
+
+  setupPWA();
+  setupMobileMenu();
 
   try {
     const cfg = await fetch("/api/config").then((r) => r.json());
     state.moods = cfg.moods || {};
     state.mood = cfg.defaultMood || "happy";
+    state.traitDefs = cfg.traitDefs || {};
     if (cfg.activity) setActivity(cfg.activity);
 
     // fill mood dropdown
@@ -60,6 +83,23 @@ async function init() {
       opt.textContent = `${m.emoji} ${m.label}`;
       els.moodOverride.appendChild(opt);
     }
+
+    // load her persona (memory) from the server
+    const p = cfg.persona || {};
+    state.userName = p.userName || "";
+    state.traits = p.traits || {};
+    state.facts = p.facts || [];
+    state.affection = p.affection ?? 20;
+    state.relationship = p.relationship || "partner";
+    state.pronoun = p.pronoun || "he";
+    els.userName.value = state.userName;
+    buildSelect(els.relationship, cfg.relationshipDefs, state.relationship, (d) => `${d.emoji} ${d.label}`);
+    buildSelect(els.pronoun, cfg.pronounDefs, state.pronoun, (d) => d.label);
+    els.relationship.addEventListener("change", () => { state.relationship = els.relationship.value; saveTraits(); });
+    els.pronoun.addEventListener("change", () => { state.pronoun = els.pronoun.value; saveTraits(); });
+    buildSliders();
+    renderMemory();
+    setBond(state.affection, p.affectionLabel);
 
     if (cfg.configured) {
       setStatus(`💗 ${cfg.provider} · ${cfg.model}`, "good");
@@ -72,6 +112,162 @@ async function init() {
   }
 
   renderAll();
+}
+
+// fill a <select> from a defs object {key:{...}} with a label fn
+function buildSelect(el, defs, selected, labelFn) {
+  el.innerHTML = "";
+  for (const [key, def] of Object.entries(defs || {})) {
+    const opt = document.createElement("option");
+    opt.value = key;
+    opt.textContent = labelFn(def);
+    if (key === selected) opt.selected = true;
+    el.appendChild(opt);
+  }
+}
+
+// ---------- personality sliders ----------
+function buildSliders() {
+  const host = els.traits;
+  host.querySelectorAll(".trait").forEach((n) => n.remove());
+  for (const [key, def] of Object.entries(state.traitDefs)) {
+    const val = state.traits[key] ?? def.default;
+    const wrap = document.createElement("div");
+    wrap.className = "trait";
+    wrap.innerHTML = `
+      <div class="trait-head"><span>${def.emoji} ${def.label}</span><b id="tv-${key}">${val}</b></div>
+      <input type="range" min="0" max="100" value="${val}" id="tr-${key}" />`;
+    host.appendChild(wrap);
+    const input = wrap.querySelector("input");
+    input.addEventListener("input", () => {
+      state.traits[key] = +input.value;
+      $(`tv-${key}`).textContent = input.value;
+      saveTraits();
+    });
+  }
+}
+
+let traitTimer = null;
+function saveTraits() {
+  clearTimeout(traitTimer);
+  traitTimer = setTimeout(() => {
+    fetch("/api/traits", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        traits: state.traits,
+        userName: state.userName,
+        relationship: state.relationship,
+        pronoun: state.pronoun,
+      }),
+    }).catch(() => {});
+  }, 400);
+}
+
+// ---------- language badge ----------
+function setLangBadge(lang, fallback) {
+  const si = lang === "sinhala";
+  els.langBadge.textContent = si ? "සිං" : "EN";
+  els.langBadge.classList.toggle("si", si);
+  els.langBadge.title = si
+    ? fallback
+      ? "Sinhala (add a Gemini key for the best Sinhala)"
+      : "Sinhala · Gemini 2.5 Flash"
+    : "English";
+  if (si && fallback && !sessionStorage.getItem("siWarn")) {
+    sessionStorage.setItem("siWarn", "1");
+    toast("🌐 Speaking <b>Sinhala</b> — add a free <b>Gemini</b> key in .env for the best Sinhala 💕");
+  }
+}
+
+// ---------- PWA: install + service worker ----------
+let deferredPrompt = null;
+function setupPWA() {
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () =>
+      navigator.serviceWorker.register("/sw.js").catch(() => {})
+    );
+  }
+  window.addEventListener("beforeinstallprompt", (e) => {
+    e.preventDefault();
+    deferredPrompt = e;
+    els.installBtn.hidden = false;
+  });
+  els.installBtn.addEventListener("click", async () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    await deferredPrompt.userChoice;
+    deferredPrompt = null;
+    els.installBtn.hidden = true;
+  });
+  window.addEventListener("appinstalled", () => {
+    els.installBtn.hidden = true;
+    toast("💖 OSHADI installed! Open her any time like an app.");
+  });
+}
+
+// ---------- mobile slide-in menu ----------
+function setupMobileMenu() {
+  const open = () => { document.body.classList.add("show-panel"); els.backdrop.classList.add("show"); };
+  const close = () => { document.body.classList.remove("show-panel"); els.backdrop.classList.remove("show"); };
+  els.menuBtn.addEventListener("click", () =>
+    document.body.classList.contains("show-panel") ? close() : open()
+  );
+  els.backdrop.addEventListener("click", close);
+  // close after picking something on mobile
+  els.moodOverride.addEventListener("change", close);
+}
+
+// ---------- bond + memory ----------
+function setBond(value, label) {
+  state.affection = value;
+  const v = Math.round(value);
+  els.bondPct.textContent = v + "%";
+  els.bondFill.style.width = v + "%";
+  if (label) els.bondLabel.textContent = label;
+}
+
+function renderMemory() {
+  els.memCount.textContent = state.facts.length;
+  if (!state.facts.length) {
+    els.memList.innerHTML = `<li class="memory-empty">She's still getting to know you…</li>`;
+    return;
+  }
+  els.memList.innerHTML = "";
+  for (const f of state.facts) {
+    const li = document.createElement("li");
+    li.textContent = f;
+    els.memList.appendChild(li);
+  }
+}
+
+async function forgetMe() {
+  if (!confirm("Make OSHADI forget everything she's learned about you?")) return;
+  await fetch("/api/forget", { method: "POST" }).catch(() => {});
+  state.facts = [];
+  state.affection = 20;
+  state.userName = "";
+  els.userName.value = "";
+  renderMemory();
+  setBond(20, "still getting to know you");
+  toast("💔 <b>OSHADI</b> forgot everything… start fresh?");
+}
+
+// After a reply, refresh her memory from the server (she may have learned).
+async function refreshMemory() {
+  try {
+    const cfg = await fetch("/api/config").then((r) => r.json());
+    const p = cfg.persona || {};
+    const before = state.facts.length;
+    state.facts = p.facts || state.facts;
+    state.traits = p.traits || state.traits;
+    renderMemory();
+    setBond(p.affection ?? state.affection, p.affectionLabel);
+    if (state.facts.length > before) {
+      const newest = state.facts[state.facts.length - 1];
+      toast(`🧠 <b>OSHADI remembered:</b> ${escapeHtml(newest)}`);
+    }
+  } catch {}
 }
 
 // ---------- sending ----------
@@ -118,6 +314,8 @@ async function onSend(e) {
         replyMood = override === "auto" ? evt.mood : override;
         applyMood(replyMood);
         if (evt.activity) setActivity(evt.activity);
+        if (typeof evt.affection === "number") setBond(evt.affection, evt.affectionLabel);
+        if (evt.language) setLangBadge(evt.language, evt.sinhalaFallback);
         paintBubble(bubble, replyMood); // tint this bubble with her mood
       } else if (evt.type === "token") {
         els.typing.hidden = true;
@@ -147,6 +345,8 @@ async function onSend(e) {
     els.typing.hidden = true;
     els.input.focus();
     scrollDown();
+    // she may have just learned something — refresh her memory panel
+    refreshMemory();
   }
 }
 
@@ -297,4 +497,24 @@ function load(k, fallback) {
     const v = localStorage.getItem(k);
     return v ? JSON.parse(v) : fallback;
   } catch { return fallback; }
+}
+
+let toastTimer = null;
+function toast(html) {
+  let t = document.querySelector(".toast");
+  if (!t) {
+    t = document.createElement("div");
+    t.className = "toast";
+    document.body.appendChild(t);
+  }
+  t.innerHTML = html;
+  t.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove("show"), 4000);
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])
+  );
 }
