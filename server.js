@@ -419,13 +419,19 @@ async function streamGemini(cfg, system, messages, onToken) {
     generationConfig: { temperature: 0.9 },
   };
 
-  const upstream = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-
-  if (!upstream.ok || !upstream.body) {
+  // Gemini sometimes returns transient 503 (high demand) — retry a few times.
+  let upstream;
+  for (let attempt = 1; attempt <= 4; attempt++) {
+    upstream = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (upstream.ok && upstream.body) break;
+    if ((upstream.status === 503 || upstream.status === 429) && attempt < 4) {
+      await new Promise((r) => setTimeout(r, 800 * attempt));
+      continue;
+    }
     const errText = await upstream.text().catch(() => "");
     throw new Error(`Provider error ${upstream.status}: ${errText.slice(0, 300)}`);
   }
