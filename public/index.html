@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>OSHADI 💖 — your AI girl</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700&family=Dancing+Script:wght@600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="style.css" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💖</text></svg>"
+    />
+  </head>
+  <body>
+    <div class="app">
+      <!-- ===== Sidebar ===== -->
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-avatar" id="brandAvatar">💖</div>
+          <div class="brand-name">OSHADI</div>
+          <div class="brand-tag">your AI girl</div>
+        </div>
+
+        <div class="mood-card">
+          <div class="mood-card-title">Current mood</div>
+          <div class="mood-now">
+            <span class="mood-now-emoji" id="moodEmoji">😊</span>
+            <span class="mood-now-label" id="moodLabel">Happy</span>
+          </div>
+          <div class="mood-bar"><span id="moodBarFill"></span></div>
+        </div>
+
+        <div class="panel">
+          <label class="field">
+            <span>Call you by</span>
+            <input id="userName" type="text" placeholder="your name / nickname" />
+          </label>
+
+          <label class="field">
+            <span>Her vibe</span>
+            <select id="moodOverride">
+              <option value="auto">Auto (let her feel) 💞</option>
+            </select>
+          </label>
+
+          <button class="ghost-btn" id="clearBtn">🧹 Clear chat</button>
+        </div>
+
+        <div class="status" id="status">connecting…</div>
+      </aside>
+
+      <!-- ===== Chat ===== -->
+      <main class="chat">
+        <header class="chat-head">
+          <div class="chat-head-avatar" id="headAvatar">💖</div>
+          <div class="chat-head-info">
+            <div class="chat-head-name">OSHADI <span class="dot online" id="onlineDot"></span></div>
+            <div class="chat-head-status" id="headStatus">online · feeling happy</div>
+            <div class="chat-head-activity" id="headActivity">💖 here with you</div>
+          </div>
+        </header>
+
+        <div class="messages" id="messages"></div>
+
+        <div class="typing" id="typing" hidden>
+          <span class="typing-avatar">💖</span>
+          <span class="bubble typing-bubble"><i></i><i></i><i></i></span>
+        </div>
+
+        <form class="composer" id="composer">
+          <input
+            id="input"
+            type="text"
+            autocomplete="off"
+            placeholder="Type something sweet to OSHADI…"
+          />
+          <button type="submit" id="sendBtn" aria-label="Send">➤</button>
+        </form>
+      </main>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>
